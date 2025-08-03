@@ -23,7 +23,7 @@ These projects are more specialised, with some user-assembly required.
 ### Unicorn Wrangler 
 A flexible micropython framework for running animations on the Pimoroni "suite" of Unicorn LED matrix displays (Cosmic, Galactic, and Stellar). 
 
-Features include MQTT control, NTP time sync, and a web-based Docker server for streaming and auto-converting videos and images. Simulator packages for running the MicroPython packages on a local PC (or even a Unicorn HD Raspberry Pi HAT) are also included.
+Features include MQTT control, NTP time sync, and a web-based Docker server for streaming and auto-converting videos and images. Simulator packages for running the micropython code on a local PC (or even a Unicorn HD Raspberry Pi HAT) are also included.
 
 [Link to Unicorn Wrangler](https://github.com/seesee/unicorn_wrangler/)  
 
