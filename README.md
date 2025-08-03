@@ -32,7 +32,7 @@ I wrote this because I wanted to schedule running cron scripts in my homelab usi
 
 ----
 
-&copy; 2024--2025 Chris Carline.  
+&copy; 2024-2025 Chris Carline.  
 All rights reserved.
 
 ----
