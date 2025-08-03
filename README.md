@@ -1,6 +1,6 @@
 # CC's Apps
 
-A central repository linking to some of my [public GitHub apps and projects](https://seesee.github.io/apps/).
+A central repository linking to some of my [public GitHub apps and projects](https://github.com/seesee/).
 
 ## Web Apps
 
