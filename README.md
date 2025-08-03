@@ -27,7 +27,7 @@ Features include MQTT control, NTP time sync, and a web-based Docker server for 
 
 [Link to Unicorn Wrangler](https://github.com/seesee/unicorn_wrangler/)  
 
-### Unicorn Wrangler 
+### App::mqtt2job
 Subscribes to the `my/topic/job` MQTT topic and, upon receiving a correctly formatted JSON message, will fork and run the requested job in a wrapper script -- provided it is present and executable in the `job_dir` directory.
 
 This wrapper generates two child MQTT messages under the base topic at `my/topic/status`. The first message is sent when the job is initiated; the second is sent when the job has completed (or timed out). This second message also includes any output from the job, along with various metadata (e.g., execution datetime, duration, timeout condition, etc.).
