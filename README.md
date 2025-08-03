@@ -5,8 +5,8 @@ A central repository linking to some of my [public GitHub apps and projects](htt
 ## Web Apps
 
 All my web apps are self-contained and run entirely in-browser using local storage.  
-No tracking or other nonsense is included--everything is 100% private and can work completely offline (just save as a file, or host it yourself).
-
+No tracking or other nonsense is included -- everything is 100% private and can work completely offline (just save as a file, or host it yourself).
+ 
 ### Activity Tracker
 
 [Activity Tracker](https://seesee.github.io/apps/activity-tracker/)  
@@ -24,7 +24,7 @@ A flexible system for running animations on the Pimoroni "suite" of Unicorn LED 
 Features include MQTT control, NTP time sync, and a web-based Docker server for streaming and auto-converting videos and images. Simulator packages for running the MicroPython packages on a local PC (or even a Unicorn HD Raspberry Pi HAT) are also included.
 
 [App::mqtt2job](https://github.com/seesee/App-mqtt2job/)  
-Subscribes to the `my/topic/job` MQTT topic and, upon receiving a correctly formatted JSON message, will fork and run the requested job in a wrapper script--provided it is present and executable in the `job_dir` directory.
+Subscribes to the `my/topic/job` MQTT topic and, upon receiving a correctly formatted JSON message, will fork and run the requested job in a wrapper script -- provided it is present and executable in the `job_dir` directory.
 
 This wrapper generates two child MQTT messages under the base topic at `my/topic/status`. The first message is sent when the job is initiated; the second is sent when the job has completed (or timed out). This second message also includes any output from the job, along with various metadata (e.g., execution datetime, duration, timeout condition, etc.).
 
