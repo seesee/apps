@@ -4,8 +4,7 @@ A central repository linking to some of my [public GitHub apps and projects](htt
 
 ## Web Apps
 
-All my web apps are self-contained and run entirely in-browser using local storage.  
-No tracking or other nonsense is included -- everything is 100% private and can work completely offline (just save as a file, or host it yourself).
+All my web apps are self-contained and run entirely in-browser using local storage. No tracking or other nonsense is included -- everything is 100% private and can work completely offline (just save as a file, or host it yourself). Nothing will phone home. No cookies will be harmed (or even used).
  
 ### Activity Tracker
 A single-page web app (aside from an optional service worker and favicon) that allows you to track what you're doing throughout the day. As I am prone to forget what I've done during the day, it will periodically play a reminder sound and send a system notification reminder to. All this is configurable. If Pomodoro is your bag, it will do that too. You can also tag notes, add todos, set due days and generate reports.  
