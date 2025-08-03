@@ -18,7 +18,7 @@ and outputting as text/html/csv etc.
 
 ## Other Projects
 
-[Unicorn Wrangler](https://github.com/seesee/unicorn-wrangler/)
+[Unicorn Wrangler](https://github.com/seesee/unicorn_wrangler/)
 Unicorn Wrangler is a flexible system for running animations on the Pimoroni
 "suite" of Unicorn LED matrix displays (Cosmic, Galactic, and Stellar).
 Features include MQTT control, ntp time sync and a web-based docker server 
