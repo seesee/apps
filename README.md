@@ -16,6 +16,11 @@ A quick way to take a text template, substitute placeholders within it (in eithe
 
 [Link to Templatimator](https://seesee.github.io/apps/templatimator/)  
 
+### mdtool
+Various markdown tools, e.g. markdown to html, html to markdown. Can be run completely offline.
+
+[Link to mdtool](https://seesee.github.io/apps/mdtool/)  
+
 ## Other Projects
 
 These projects are more specialised, with some user-assembly required. 
