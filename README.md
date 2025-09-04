@@ -41,6 +41,11 @@ I wrote this because I wanted to schedule running cron scripts in my homelab usi
 
 [Link to App::mqtt2job](https://github.com/seesee/App-mqtt2job/)  
 
+### 2do2
+A CLI script to view and manage items in Todoist (requires API key and probably a subscription). Actually quite useful, if you just need to do something quickly and don't want to open the app/use the website. It's fairly functional and tries to keep out of your way.
+
+[Link to 2do2](https://github.com/seesee/2do2)  
+
 ----
 
 &copy; 2024-2025 Chris Carline.  
