@@ -1,0 +1,264 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Getopt::Long;
+
+# Options
+my @only       = ();  # repeat: --only visa --only mc
+my @ignore     = ();  # repeat: --ignore amex
+my $aggressive = 0;   # include 'unknown' scheme by default
+my $wipe       = 0;   # zero entire PAN; default is preserve BIN+last4
+my $help       = 0;
+my $luhn       = 1;   # --luhn / --no-luhn toggle (default on)
+
+GetOptions(
+  'only=s@'    => \@only,
+  'ignore=s@'  => \@ignore,
+  'aggressive' => \$aggressive,
+  'wipe'       => \$wipe,
+  'luhn!'      => \$luhn,       # allows --luhn / --no-luhn
+  'help'       => \$help
+) or die "Error parsing options\n";
+
+if ($help) {
+  print_help();
+  exit 0;
+}
+
+# Binary-safe I/O
+binmode(STDIN);
+binmode(STDOUT);
+binmode(STDERR);
+
+# Canonical schemes we recognise
+my @KNOWN_SCHEMES = qw(visa mastercard amex discover);
+my @ALL_SCHEMES   = (@KNOWN_SCHEMES, 'unknown');
+
+# Build allow-list from flags
+my %ALLOW = ();
+
+sub normalise_scheme {
+  my ($s) = @_;
+  return '' unless defined $s;
+  $s =~ s/^\s+|\s+$//g;
+  $s = lc $s;
+
+  return 'visa'       if $s eq 'v' || $s eq 'visa';
+  return 'mastercard'
+    if $s eq 'mc'
+    || $s eq 'master'
+    || $s eq 'mast'
+    || $s eq 'mastercard';
+  return 'amex'
+    if $s eq 'ae'
+    || $s eq 'amex'
+    || $s eq 'american'
+    || $s eq 'americanexpress';
+  return 'discover' if $s eq 'disc' || $s eq 'discover';
+  return 'unknown'  if $s eq 'unknown';
+  return '';
+}
+
+# Include defaults or explicit --only
+if (@only) {
+  for my $tok (@only) {
+    my $canon = normalise_scheme($tok);
+    die "Unrecognised scheme for --only: '$tok'\n" unless $canon;
+    $ALLOW{$canon} = 1;
+  }
+} else {
+  # No --only: default to known schemes; include unknown if aggressive
+  $ALLOW{$_} = 1 for @KNOWN_SCHEMES;
+  $ALLOW{unknown} = 1 if $aggressive;
+}
+
+# Apply ignores (highest precedence)
+for my $tok (@ignore) {
+  my $canon = normalise_scheme($tok);
+  die "Unrecognised scheme for --ignore: '$tok'\n" unless $canon;
+  delete $ALLOW{$canon};
+}
+
+# Identify PAN-like candidate substrings:
+my $PAN_REGEX = qr{
+  (?<!\d)               # not preceded by a digit
+  (?:\d[- ]?){12,18}    # 12–18 occurrences of digit with optional sep
+  \d                    # final digit = total 13–19 digits
+  (?!\d)
+}x;
+
+# Stream processing parameters
+my $CHUNK   = 1024 * 1024;  # 1 MiB
+my $OVERLAP = 128;          # overlap to catch boundary-spanning matches
+
+# Process files or STDIN
+if (@ARGV) {
+  for my $path (@ARGV) {
+    open my $fh, '<', $path
+      or die "Cannot open '$path' for reading: $!";
+    binmode($fh);
+    process_stream($fh);
+    close $fh;
+  }
+} else {
+  process_stream(*STDIN);
+}
+
+sub process_stream {
+  my ($fh) = @_;
+  my $buffer = '';
+
+  while (1) {
+    my $chunk;
+    my $read = read($fh, $chunk, $CHUNK);
+    die "Read error: $!" unless defined $read;
+    last if $read == 0;
+
+    $buffer .= $chunk;
+
+    if (length($buffer) > $OVERLAP) {
+      my $proc_len = length($buffer) - $OVERLAP;
+      my $segment  = substr($buffer, 0, $proc_len, '');
+      $segment =~ s/($PAN_REGEX)/scrub_match($1)/ge;
+      print $segment;
+    }
+  }
+
+  # Flush remaining tail
+  $buffer =~ s/($PAN_REGEX)/scrub_match($1)/ge;
+  print $buffer;
+}
+
+sub scheme_allowed {
+  my ($scheme) = @_;
+  return !!$ALLOW{$scheme};
+}
+
+sub scrub_match {
+  my ($match) = @_;
+
+  # Extract digits only for validation/detection
+  my $digits = $match;
+  $digits =~ tr/0-9//cd;
+  my $len = length($digits);
+  return $match if $len < 13 || $len > 19;
+
+  my $scheme = detect_scheme($digits);
+  return $match unless scheme_allowed($scheme);
+
+  # Luhn validation (unless disabled)
+  if ($luhn) {
+    return $match unless luhn_check($digits);
+  }
+
+  my $masked = mask_digits($digits, $wipe);
+
+  # Reinsert masked digits, preserving original separators
+  my $i = 0;
+  $match =~ s/\d/substr($masked, $i++, 1)/ge;
+  return $match;
+}
+
+sub luhn_check {
+  my ($n) = @_;
+  my $sum = 0;
+  my $odd = 1;  # from rightmost, odd positions added raw
+  for (my $i = length($n) - 1 ; $i >= 0 ; $i--) {
+    my $d = ord(substr($n, $i, 1)) - 48;  # '0' => 48
+    if ($odd) {
+      $sum += $d;
+    } else {
+      my $t = $d << 1;
+      $sum += ($t > 9) ? ($t - 9) : $t;
+    }
+    $odd = !$odd;
+  }
+  return ($sum % 10) == 0;
+}
+
+sub detect_scheme {
+  my ($n) = @_;
+  my $len = length($n);
+
+  # American Express: 34 or 37, 15 digits
+  return 'amex' if $n =~ /^3[47]/ && $len == 15;
+
+  # Visa: starts with 4, 13–19 digits
+  return 'visa' if $n =~ /^4/ && $len >= 13 && $len <= 19;
+
+  # Mastercard: 51–55 or 2221–2720, 16 digits
+  if ($len == 16) {
+    my $i2 = int(substr($n, 0, 2));
+    my $i4 = int(substr($n, 0, 4));
+    return 'mastercard'
+      if ($i2 >= 51 && $i2 <= 55) || ($i4 >= 2221 && $i4 <= 2720);
+  }
+
+  # Discover: 6011, 622126–622925, 644–649, 65, 16–19 digits
+  if ($len >= 16 && $len <= 19) {
+    my $prefix4 = substr($n, 0, 4);
+    my $i2      = int(substr($n, 0, 2));
+    my $i3      = int(substr($n, 0, 3));
+    my $i6      = ($len >= 6) ? int(substr($n, 0, 6)) : 0;
+    return 'discover'
+      if $prefix4 eq '6011'
+      || $i2 == 65
+      || ($i3 >= 644 && $i3 <= 649)
+      || ($i6 >= 622126 && $i6 <= 622925);
+  }
+
+  return 'unknown';
+}
+
+sub mask_digits {
+  my ($digits, $wipe_all) = @_;
+  my $len = length($digits);
+
+  if ($wipe_all) {
+    return '0' x $len;
+  }
+
+  # Default: preserve BIN (first 6) and last 4; if too short, wipe all
+  return '0' x $len if $len < 10;
+
+  my $bin   = substr($digits, 0, 6);
+  my $last4 = substr($digits, -4);
+  my $mid   = '0' x ($len - 10);
+  return $bin . $mid . $last4;
+}
+
+sub print_help {
+  print <<'EOF';
+pan_scrubber - Remove credit card numbers from files (text or binary)
+
+Usage:
+  pan_scrubber [options] < input > output
+  pan_scrubber [options] file1 [file2 ...]
+
+Matching:
+  - Detects 13–19 digits with optional single spaces or hyphens between digits.
+    This covers raw digits, 4-4-4-4, and Amex-style 4-6-5 groupings.
+  - By default a Luhn check is applied; use --no-luhn to disable it.
+
+Filtering:
+  --only SCHEME       Include only these scheme(s). Repeat the flag.
+  --ignore SCHEME     Exclude these scheme(s). Repeat the flag.
+    Schemes: visa, mastercard (mc), amex, discover, unknown
+  --aggressive        Include 'unknown' by default (i.e. scrub numbers that
+                      don't match known scheme prefixes), unless overridden
+                      by --only/--ignore.
+
+Validation:
+  --luhn / --no-luhn  Enable or disable Luhn validation (default: enabled).
+
+Masking:
+  Default is to preserve BIN (first 6) and last 4 digits.
+  --wipe              Zero out the entire PAN instead.
+
+Examples:
+  cat infile | pan_scrubber > outfile
+  pan_scrubber --aggressive --no-luhn --wipe < infile > outfile
+  pan_scrubber --only visa --only mc < infile > outfile
+  pan_scrubber --ignore amex < infile > outfile
+EOF
+}
