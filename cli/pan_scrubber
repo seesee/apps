@@ -11,6 +11,7 @@ my $wipe       = 0;   # zero entire PAN; default is preserve BIN+last4
 my $help       = 0;   # display help
 my $luhn       = 1;   # --luhn / --no-luhn toggle (default on)
 my $ebcdic     = 0;   # --ebcdic mode
+my $report     = 0;   # --report flag for statistics
 
 GetOptions(
   'only=s@'    => \@only,
@@ -19,6 +20,7 @@ GetOptions(
   'wipe'       => \$wipe,
   'luhn!'      => \$luhn,       
   'ebcdic'     => \$ebcdic,     
+  'report'     => \$report,
   'help'       => \$help
 ) or die "Error parsing options\n";
 
@@ -27,14 +29,24 @@ if ($help) {
   exit 0;
 }
 
+# Canonical schemes we recognise
+my @KNOWN_SCHEMES = qw(visa mastercard amex discover);
+my @ALL_SCHEMES   = (@KNOWN_SCHEMES, 'unknown');
+
+# Statistics tracking
+my %STATS = ();
+for my $s (@KNOWN_SCHEMES, 'unknown') {
+  $STATS{$s} = 0;
+}
+
 # Binary-safe I/O
 binmode(STDIN);
 binmode(STDOUT);
 binmode(STDERR);
 
 # EBCDIC to ASCII translation tables (digits and common chars)
-my @EBCDIC_TO_ASCII = $ebcdic ? (0) x 256 : undef;
-my @ASCII_TO_EBCDIC = $ebcdic ? (0) x 256 : undef;
+my @EBCDIC_TO_ASCII = $ebcdic ? ((0) x 256) : undef;
+my @ASCII_TO_EBCDIC = $ebcdic ? ((0) x 256) : undef;
 
 # Initialise translation tables
 init_ebcdic_tables() if $ebcdic;
@@ -68,10 +80,6 @@ sub ascii_to_ebcdic {
   my ($data) = @_;
   return join('', map { chr($ASCII_TO_EBCDIC[ord($_)]) } split //, $data);
 }
-
-# Canonical schemes we recognise
-my @KNOWN_SCHEMES = qw(visa mastercard amex discover);
-my @ALL_SCHEMES   = (@KNOWN_SCHEMES, 'unknown');
 
 # Build allow-list from flags
 my %ALLOW = ();
@@ -126,6 +134,9 @@ my $PAN_REGEX = qr{
   (?!\d)
 }x;
 
+# Regex for long digit strings that might contain embedded PANs
+my $LONG_DIGITS_REGEX = qr{\d{13,}}x;
+
 # Stream processing parameters
 my $CHUNK   = 1024 * 1024;  # 1 MiB
 my $OVERLAP = 128;          # overlap to catch boundary-spanning matches
@@ -141,6 +152,11 @@ if (@ARGV) {
   }
 } else {
   process_stream(*STDIN);
+}
+
+# Print report if requested
+if ($report) {
+  print_report();
 }
 
 sub process_stream {
@@ -161,7 +177,10 @@ sub process_stream {
     if (length($buffer) > $OVERLAP) {
       my $proc_len = length($buffer) - $OVERLAP;
       my $segment  = substr($buffer, 0, $proc_len, '');
+      
+      # Process both regular PANs and embedded PANs
       $segment =~ s/($PAN_REGEX)/scrub_match($1)/ge;
+      $segment =~ s/($LONG_DIGITS_REGEX)/scrub_long_digits($1)/ge;
       
       # Convert back to EBCDIC if needed
       $segment = ascii_to_ebcdic($segment) if $ebcdic;
@@ -171,6 +190,7 @@ sub process_stream {
 
   # Flush remaining tail
   $buffer =~ s/($PAN_REGEX)/scrub_match($1)/ge;
+  $buffer =~ s/($LONG_DIGITS_REGEX)/scrub_long_digits($1)/ge;
   $buffer = ascii_to_ebcdic($buffer) if $ebcdic;
   print $buffer;
 }
@@ -178,6 +198,53 @@ sub process_stream {
 sub scheme_allowed {
   my ($scheme) = @_;
   return !!$ALLOW{$scheme};
+}
+
+sub scrub_long_digits {
+  my ($digit_string) = @_;
+  my $len            = length($digit_string);
+  
+  # Don't process if it's already been handled or too short
+  return $digit_string if $len < 13;
+  
+  my $result   = $digit_string;
+  my $modified = 0;
+  my $pos      = 0;
+  
+  # Scan through the string looking for valid PANs
+  while ($pos <= $len - 13) {
+    my $found_pan = 0;
+    
+    # Try each possible PAN length (longest first for greedy matching)
+    for my $pan_len (reverse 13 .. 19) {
+      last if $pos + $pan_len > $len;
+      
+      my $candidate = substr($digit_string, $pos, $pan_len);
+      my $scheme    = detect_scheme($candidate);
+      
+      # Check if this is a valid PAN we should scrub
+      next unless scheme_allowed($scheme);
+      next if $luhn && !luhn_check($candidate);
+      
+      # Found a valid PAN - mask it
+      my $masked = mask_digits($candidate, $wipe);
+      substr($result, $pos, $pan_len) = $masked;
+      
+      # Update statistics
+      $STATS{$scheme}++;
+      
+      # Move past this PAN
+      $pos       += $pan_len;
+      $found_pan = 1;
+      $modified  = 1;
+      last;
+    }
+    
+    # If no PAN found at this position, move forward one digit
+    $pos++ unless $found_pan;
+  }
+  
+  return $result;
 }
 
 sub scrub_match {
@@ -196,6 +263,9 @@ sub scrub_match {
   if ($luhn) {
     return $match unless luhn_check($digits);
   }
+
+  # Update statistics
+  $STATS{$scheme}++;
 
   my $masked = mask_digits($digits, $wipe);
 
@@ -273,6 +343,24 @@ sub mask_digits {
   return $bin . $mid . $last4;
 }
 
+sub print_report {
+  my $total = 0;
+  
+  print STDERR "\n=== PAN Scrubbing Report ===\n";
+  
+  for my $scheme (@KNOWN_SCHEMES, 'unknown') {
+    my $count = $STATS{$scheme};
+    next unless $count > 0;
+    
+    printf STDERR "%-12s: %d\n", ucfirst($scheme), $count;
+    $total += $count;
+  }
+  
+  print STDERR "------------------------\n";
+  printf STDERR "%-12s: %d\n", 'Total', $total;
+  print STDERR "\n";
+}
+
 sub print_help {
   print <<'EOF';
 pan_scrubber - Remove credit card numbers from files (text or binary)
@@ -284,6 +372,8 @@ Usage:
 Matching:
   - Detects 13–19 digits with optional single spaces or hyphens between digits.
     This covers raw digits, 4-4-4-4, and Amex-style 4-6-5 groupings.
+  - Also detects PANs embedded in long strings of digits (e.g. fixed-length
+    records with multiple concatenated fields).
   - By default a Luhn check is applied; use --no-luhn to disable it.
 
 Filtering:
@@ -304,12 +394,14 @@ Masking:
   Default is to preserve BIN (first 6) and last 4 digits.
   --wipe              Zero out the entire PAN instead.
 
+Reporting:
+  --report            Print statistics to STDERR about PANs removed.
+
 Examples:
   cat infile | pan_scrubber > outfile
   pan_scrubber --aggressive --no-luhn --wipe < infile > outfile
-  pan_scrubber --only visa --only mc < infile > outfile
+  pan_scrubber --only visa --only mc --report < infile > outfile
   pan_scrubber --ignore amex < infile > outfile
-  pan_scrubber --ebcdic < ipm.dat > ipm_scrubbed.dat
+  pan_scrubber --ebcdic --report < ipm.dat > ipm_scrubbed.dat
 EOF
 }
-
