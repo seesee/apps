@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BIN Test Card Generator</title>
+    <title>Test Card Generator</title>
     <link rel="manifest" href="manifest.json" />
     <style>
       body {
@@ -34,6 +34,7 @@
         padding: 0.75rem;
         font-size: 1rem;
         cursor: pointer;
+        border-radius: 4px;
       }
 
       button:hover {
@@ -47,41 +48,61 @@
     </style>
   </head>
   <body>
-    <h1>BIN Test Card Generator</h1>
+    <h1>Test Card Generator</h1>
     <p class="note">
-      Enter one BIN per line (6–11 digits). The generator pads and calculates a
-      valid Luhn check digit to form a 16-digit number.
+      Enter one BIN (1–15 digits) per line. The generator completes each to a
+      16‑digit number with a valid Luhn check digit.
     </p>
 
-    <textarea id="input" placeholder="Example: 411111&#10;55000012345"></textarea>
+    <textarea
+      id="input"
+      placeholder="Example: 4&#10;123456&#10;55000012345"
+    ></textarea>
     <button id="generate">Generate</button>
-    <textarea id="output" placeholder="Generated cards will appear here"></textarea>
+    <textarea
+      id="output"
+      placeholder="Generated card numbers will appear here"
+    ></textarea>
 
     <script>
+      // ---------------------------
+      // Luhn check digit calculator
+      // ---------------------------
       function luhnCheckDigit(number) {
-        const digits = number.split("").map(Number);
-        for (let i = digits.length - 1; i >= 0; i -= 2) {
-          digits[i] *= 2;
-          if (digits[i] > 9) digits[i] -= 9;
-        }
-        const sum = digits.reduce((a, b) => a + b, 0);
+        const digits = number
+          .split("")
+          .map((n) => parseInt(n, 10))
+          .reverse();
+        const sum = digits.reduce((acc, digit, idx) => {
+          if (idx % 2 === 0) {
+            // even index once reversed => odd position from right
+            const doubled = digit * 2;
+            return acc + (doubled > 9 ? doubled - 9 : doubled);
+          }
+          return acc + digit;
+        }, 0);
         const mod = sum % 10;
         return mod === 0 ? 0 : 10 - mod;
       }
 
+      // ---------------------------
+      // Generate card from BIN
+      // ---------------------------
       function generateCard(bin) {
         const prefix = bin.trim();
-        if (!/^\d{6,11}$/.test(prefix)) return null;
+        if (!/^\d{1,15}$/.test(prefix)) return null;
         const needed = 15 - prefix.length;
-        const randomPart = Array.from(
-          { length: needed },
-          () => Math.floor(Math.random() * 10)
+        const randomPart = Array.from({ length: needed }, () =>
+          Math.floor(Math.random() * 10)
         ).join("");
         const partial = prefix + randomPart;
         const checkDigit = luhnCheckDigit(partial);
         return partial + checkDigit;
       }
 
+      // ---------------------------
+      // Handle "Generate" click
+      // ---------------------------
       document.getElementById("generate").addEventListener("click", () => {
         const bins = document
           .getElementById("input")
@@ -97,7 +118,9 @@
         document.getElementById("output").value = generated;
       });
 
-      // Register service worker for PWA support
+      // ---------------------------
+      // Register service worker
+      // ---------------------------
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("service-worker.js");
       }
