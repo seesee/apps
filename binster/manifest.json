@@ -1,0 +1,9 @@
+{
+  "name": "BIN Test Card Generator",
+  "short_name": "binster",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "description": "Generate test card numbers with valid Luhn from BIN ranges.",
+  "icons": []
+}
