@@ -383,13 +383,13 @@
         <p class="subtitle">Convert hex strings to binary with optional EBCDIC support</p>
 
         <div class="info">
-            Enter space-separated hex values (e.g., "01 10 f2 20 20 81"). The tool will convert them to binary data and display the output.
+            Enter space-separated hex values (e.g., "01 10 f2 20 20 81"). The output updates automatically as you type. Click or select bytes in the input to see position details and highlight them in the output.
         </div>
 
         <div class="controls">
             <div class="control-group">
                 <label for="ebcdicMode">EBCDIC Conversion:</label>
-                <select id="ebcdicMode">
+                <select id="ebcdicMode" onchange="convertHex()">
                     <option value="false">Off (Raw bytes)</option>
                     <option value="true">On (EBCDIC → ASCII)</option>
                 </select>
@@ -397,9 +397,9 @@
 
             <div class="control-group">
                 <label for="outputMode">Output Mode:</label>
-                <select id="outputMode">
-                    <option value="text">Text (if printable)</option>
+                <select id="outputMode" onchange="convertHex()">
                     <option value="hex">Hex dump</option>
+                    <option value="text">Text (if printable)</option>
                     <option value="both">Both</option>
                 </select>
             </div>
@@ -447,8 +447,7 @@
         </div>
 
         <div class="button-group">
-            <button class="btn-primary" onclick="convertHex()">Convert</button>
-            <button class="btn-secondary" onclick="clearAll()">Clear</button>
+            <button class="btn-secondary" onclick="clearAll()">Clear All</button>
             <button class="btn-success" id="downloadBtn" onclick="downloadBinary()" disabled>Download Binary</button>
         </div>
 
@@ -614,6 +613,9 @@
 
             // Update the hex preview
             updateHexPreview(hexValues);
+
+            // Auto-convert on input change
+            convertHex();
         }
 
         function updateHexPreview(hexValues) {
@@ -755,6 +757,8 @@
             if (!hexInput.value.trim()) {
                 infoEl.classList.remove('visible');
                 rangeSection.classList.remove('visible');
+                currentHighlightRange = null;
+                convertHex();
                 return;
             }
 
@@ -763,7 +767,7 @@
             if (position.isRange) {
                 // Show range info
                 let infoHTML = `<div class="position-info-title">Selection Information</div>`;
-                infoHTML += `<div class="position-info-detail"><strong>Byte Range:</strong> ${position.start} to ${position.end} (0-indexed) / ${position.start + 1} to ${position.end + 1} (1-indexed)</div>`;
+                infoHTML += `<div class="position-info-detail"><strong>Byte Range:</strong> ${position.start} to ${position.end - 1} (0-indexed) / ${position.start + 1} to ${position.end} (1-indexed)</div>`;
                 infoHTML += `<div class="position-info-detail"><strong>Bytes Selected:</strong> ${position.end - position.start}</div>`;
 
                 // Show the hex values in this range
@@ -775,10 +779,14 @@
                 infoEl.innerHTML = infoHTML;
                 infoEl.classList.add('visible');
 
-                // Auto-fill the range inputs
+                // Auto-fill the range inputs and highlight
                 document.getElementById('rangeStart').value = position.start;
                 document.getElementById('rangeEnd').value = position.end - 1;
                 rangeSection.classList.add('visible');
+
+                // Set highlight range and re-convert
+                currentHighlightRange = { start: position.start, end: position.end - 1 };
+                convertHex();
             } else {
                 // Show single position info
                 const hexValue = position.hexValues[position.start - 1];
@@ -800,8 +808,14 @@
                     infoEl.innerHTML = infoHTML;
                     infoEl.classList.add('visible');
                     rangeSection.classList.add('visible');
+
+                    // Highlight single byte and re-convert
+                    currentHighlightRange = { start: position.start - 1, end: position.start - 1 };
+                    convertHex();
                 } else {
                     infoEl.classList.remove('visible');
+                    currentHighlightRange = null;
+                    convertHex();
                 }
             }
         }
@@ -825,7 +839,7 @@
             downloadBtn.disabled = true;
 
             if (!hexInput.trim()) {
-                messageEl.innerHTML = '<div class="error">Please enter hex values</div>';
+                // Don't show error for empty input (since this runs live)
                 return;
             }
 
@@ -865,7 +879,7 @@
 
             outputEl.value = output;
             downloadBtn.disabled = false;
-            messageEl.innerHTML = `<div class="success">Successfully converted ${count} hex values to binary</div>`;
+            messageEl.innerHTML = `<div class="success">Successfully converted ${count} hex values</div>`;
 
             // Make output clickable if in hex dump mode
             makeOutputClickable();
