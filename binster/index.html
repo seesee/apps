@@ -51,17 +51,18 @@
     <h1>Test Card Generator</h1>
     <p class="note">
       Enter the start of the test card you want to regenerate (1–15 digits), or
-      paste an existing full card number to refresh its Luhn check digit.
+      paste existing card numbers. Any extra text after the digits (e.g., names
+      or CSV fields) will be preserved unaltered.
     </p>
 
     <textarea
       id="input"
-      placeholder="Examples:&#10;4&#10;123456&#10;55000012345&#10;4111111111111111"
+      placeholder="Examples:&#10;4, Visa Test&#10;123456, Payroll A&#10;55000012345, Staff Card A&#10;4111111111111111, Classic Test"
     ></textarea>
     <button id="generate">Generate</button>
     <textarea
       id="output"
-      placeholder="Regenerated card numbers will appear here"
+      placeholder="Regenerated card numbers (with preserved text) will appear here"
     ></textarea>
 
     <script>
@@ -87,41 +88,42 @@
       // ---------------------------
       // Generate or recalc card
       // ---------------------------
-      function generateCard(bin) {
-        const prefix = bin.trim();
-        if (!/^\d{1,19}$/.test(prefix)) return null;
+      function generateCard(line) {
+        const match = line.match(/^(\d{1,19})(.*)$/);
+        if (!match) return line; // No digits at start, return unmodified
+        const [_, digits, suffix] = match;
+        let base = digits;
 
-        if (prefix.length >= 16) {
-          // Recalculate Luhn on all but last digit
-          const base = prefix.slice(0, -1);
-          const checkDigit = luhnCheckDigit(base);
-          return base + checkDigit;
+        if (base.length >= 16) {
+          // For 16+ digits, recalc Luhn for last digit
+          const core = base.slice(0, -1);
+          const checkDigit = luhnCheckDigit(core);
+          base = core + checkDigit;
+        } else {
+          // For shorter, extend to 16 digits
+          const needed = 15 - base.length;
+          const randomPart = Array.from({ length: needed }, () =>
+            Math.floor(Math.random() * 10)
+          ).join("");
+          const partial = base + randomPart;
+          const checkDigit = luhnCheckDigit(partial);
+          base = partial + checkDigit;
         }
 
-        const needed = 15 - prefix.length;
-        const randomPart = Array.from({ length: needed }, () =>
-          Math.floor(Math.random() * 10)
-        ).join("");
-        const partial = prefix + randomPart;
-        const checkDigit = luhnCheckDigit(partial);
-        return partial + checkDigit;
+        return base + suffix;
       }
 
       // ---------------------------
       // Handle Generate click
       // ---------------------------
       document.getElementById("generate").addEventListener("click", () => {
-        const bins = document
+        const lines = document
           .getElementById("input")
           .value.split("\n")
           .map((l) => l.trim())
           .filter(Boolean);
 
-        const generated = bins
-          .map((b) => generateCard(b))
-          .filter(Boolean)
-          .join("\n");
-
+        const generated = lines.map((l) => generateCard(l)).join("\n");
         document.getElementById("output").value = generated;
       });
 
