@@ -375,6 +375,41 @@
             background: #fff3cd;
             border-bottom: 2px solid #ffc107;
         }
+
+        .highlight-display {
+            margin-top: 10px;
+            padding: 12px;
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            display: none;
+        }
+
+        .highlight-display.visible {
+            display: block;
+        }
+
+        .highlight-display-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .highlight-display-content {
+            color: #333;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+
+        .highlight-display-content div {
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -398,8 +433,8 @@
             <div class="control-group">
                 <label for="outputMode">Output Mode:</label>
                 <select id="outputMode" onchange="convertHex()">
-                    <option value="hex">Hex dump</option>
                     <option value="text">Text (if printable)</option>
+                    <option value="hex">Hex dump</option>
                     <option value="both">Both</option>
                 </select>
             </div>
@@ -456,6 +491,10 @@
         <div class="output-section">
             <div class="section-title">Output</div>
             <textarea id="output" readonly placeholder="Output will appear here..."></textarea>
+            <div id="highlightDisplay" class="highlight-display">
+                <div class="highlight-display-title">Highlighted Selection:</div>
+                <div id="highlightContent" class="highlight-display-content"></div>
+            </div>
         </div>
     </div>
 
@@ -774,6 +813,30 @@
                 const selectedHex = position.hexValues.slice(position.start, position.end);
                 if (selectedHex.length > 0) {
                     infoHTML += `<div class="position-info-detail"><strong>Hex Values:</strong> ${selectedHex.join(' ')}</div>`;
+
+                    // Convert to decimal values
+                    const decimalValues = selectedHex.map(h => parseInt(h, 16)).filter(v => !isNaN(v));
+                    if (decimalValues.length > 0) {
+                        infoHTML += `<div class="position-info-detail"><strong>Decimal Values:</strong> ${decimalValues.join(', ')}</div>`;
+                    }
+
+                    // Convert to ASCII/text representation
+                    const asciiText = decimalValues.map(v => {
+                        if (v >= 32 && v <= 126) {
+                            return String.fromCharCode(v);
+                        } else if (v < 32) {
+                            return `[${v}]`; // control character
+                        } else {
+                            return `[${v}]`; // non-printable
+                        }
+                    }).join('');
+                    infoHTML += `<div class="position-info-detail"><strong>Text:</strong> ${asciiText}</div>`;
+
+                    // Show binary if reasonable number of bytes
+                    if (selectedHex.length <= 8) {
+                        const binaryValues = decimalValues.map(v => v.toString(2).padStart(8, '0'));
+                        infoHTML += `<div class="position-info-detail"><strong>Binary:</strong> ${binaryValues.join(' ')}</div>`;
+                    }
                 }
 
                 infoEl.innerHTML = infoHTML;
@@ -832,6 +895,8 @@
             const outputEl = document.getElementById('output');
             const messageEl = document.getElementById('message');
             const downloadBtn = document.getElementById('downloadBtn');
+            const highlightDisplayEl = document.getElementById('highlightDisplay');
+            const highlightContentEl = document.getElementById('highlightContent');
 
             messageEl.innerHTML = '';
             outputEl.value = '';
@@ -840,6 +905,7 @@
 
             if (!hexInput.trim()) {
                 // Don't show error for empty input (since this runs live)
+                highlightDisplayEl.classList.remove('visible');
                 return;
             }
 
@@ -850,6 +916,7 @@
                     `Invalid hex value at position ${e.index + 1}: '${e.value}'${e.message ? ' (' + e.message + ')' : ''}`
                 ).join('<br>');
                 messageEl.innerHTML = `<div class="error">${errorMsg}</div>`;
+                highlightDisplayEl.classList.remove('visible');
                 return;
             }
 
@@ -881,6 +948,28 @@
             downloadBtn.disabled = false;
             messageEl.innerHTML = `<div class="success">Successfully converted ${count} hex values</div>`;
 
+            // Update highlight display
+            if (currentHighlightRange) {
+                const start = currentHighlightRange.start;
+                const end = currentHighlightRange.end;
+                const highlightedBytes = processedBytes.slice(start, end + 1);
+
+                try {
+                    const decoder = new TextDecoder('utf-8', {fatal: false});
+                    const text = decoder.decode(highlightedBytes);
+                    const hexStr = Array.from(highlightedBytes)
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join(' ');
+
+                    highlightContentEl.innerHTML = `<div><strong>Bytes ${start}-${end}:</strong> ${hexStr}</div><div><strong>Text:</strong> ${text}</div>`;
+                    highlightDisplayEl.classList.add('visible');
+                } catch (e) {
+                    highlightDisplayEl.classList.remove('visible');
+                }
+            } else {
+                highlightDisplayEl.classList.remove('visible');
+            }
+
             // Make output clickable if in hex dump mode
             makeOutputClickable();
         }
@@ -892,6 +981,7 @@
             document.getElementById('downloadBtn').disabled = true;
             document.getElementById('positionInfo').classList.remove('visible');
             document.getElementById('rangeInputSection').classList.remove('visible');
+            document.getElementById('highlightDisplay').classList.remove('visible');
             currentHighlightRange = null;
             document.getElementById('rangeStart').value = '';
             document.getElementById('rangeEnd').value = '';
