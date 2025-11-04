@@ -218,6 +218,89 @@
             font-weight: 600;
             color: #667eea;
         }
+
+        .hex-preview {
+            background: #f8f9fa;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 2;
+            min-height: 60px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .hex-value {
+            display: inline-block;
+            padding: 2px 6px;
+            margin: 2px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        .hex-value:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .hex-value.selected {
+            background: #764ba2;
+            color: white;
+            border-color: #764ba2;
+        }
+
+        .hex-value.invalid {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #dc3545;
+        }
+
+        .position-info {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            display: none;
+        }
+
+        .position-info.visible {
+            display: block;
+        }
+
+        .position-info-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 5px;
+        }
+
+        .position-info-detail {
+            color: #856404;
+            margin: 3px 0;
+        }
+
+        .output-clickable {
+            cursor: pointer;
+        }
+
+        .preview-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
@@ -261,6 +344,9 @@
                     <span class="stat-value" id="validCount">0</span>
                 </div>
             </div>
+            <div class="preview-label">Clickable Hex Preview (click any value to see position):</div>
+            <div id="hexPreview" class="hex-preview"></div>
+            <div id="positionInfo" class="position-info"></div>
         </div>
 
         <div class="button-group">
@@ -336,7 +422,7 @@
                 const chunk = bytes.slice(i, i + bytesPerLine);
 
                 const hexPart = Array.from(chunk)
-                    .map(b => b.toString(16).padStart(2, '0'))
+                    .map((b, idx) => `[${i + idx}:${b.toString(16).padStart(2, '0')}]`)
                     .join(' ');
 
                 const asciiPart = Array.from(chunk)
@@ -346,6 +432,53 @@
                 result += `${offset}  ${hexPart.padEnd(bytesPerLine * 3 - 1, ' ')}  |${asciiPart}|\n`;
             }
             return result;
+        }
+
+        function makeOutputClickable() {
+            const outputEl = document.getElementById('output');
+            const outputMode = document.getElementById('outputMode').value;
+
+            // Only make clickable if showing hex dump
+            if (outputMode !== 'hex' && outputMode !== 'both') {
+                return;
+            }
+
+            outputEl.classList.add('output-clickable');
+            outputEl.style.cursor = 'pointer';
+
+            // Remove previous listener if exists
+            outputEl.removeEventListener('click', handleOutputClick);
+            outputEl.addEventListener('click', handleOutputClick);
+        }
+
+        function handleOutputClick(e) {
+            const outputEl = e.target;
+            const clickPos = outputEl.selectionStart;
+            const text = outputEl.value;
+
+            // Find hex value at click position using the [pos:hex] format
+            const beforeClick = text.substring(0, clickPos);
+            const afterClick = text.substring(clickPos);
+
+            // Look for pattern [position:hexvalue]
+            const beforeMatch = beforeClick.match(/\[(\d+):([0-9a-f]{2})\](?!.*\[)/i);
+            const afterMatch = afterClick.match(/^\]|^[^\[]*\[(\d+):([0-9a-f]{2})\]/i);
+
+            let position, hexValue;
+
+            if (beforeMatch && beforeClick.length - beforeMatch.index < 20) {
+                position = parseInt(beforeMatch[1]);
+                hexValue = beforeMatch[2];
+            } else if (afterMatch && afterMatch[1]) {
+                position = parseInt(afterMatch[1]);
+                hexValue = afterMatch[2];
+            }
+
+            if (position !== undefined && hexValue) {
+                const hexInput = document.getElementById('hexInput').value;
+                const hexValues = hexInput.trim().split(/\s+/).filter(v => v.length > 0);
+                showPositionInfo(position, hexValue, hexValues.length);
+            }
         }
 
         function updateStats() {
@@ -358,6 +491,70 @@
 
             document.getElementById('byteCount').textContent = hexValues.length;
             document.getElementById('validCount').textContent = validCount;
+
+            // Update the hex preview
+            updateHexPreview(hexValues);
+        }
+
+        function updateHexPreview(hexValues) {
+            const previewEl = document.getElementById('hexPreview');
+
+            if (hexValues.length === 0) {
+                previewEl.innerHTML = '<span style="color: #999;">No hex values entered</span>';
+                return;
+            }
+
+            previewEl.innerHTML = '';
+
+            hexValues.forEach((hexVal, index) => {
+                const span = document.createElement('span');
+                span.className = 'hex-value';
+                span.textContent = hexVal;
+                span.dataset.position = index;
+                span.dataset.value = hexVal;
+
+                // Check if valid
+                const val = parseInt(hexVal, 16);
+                if (isNaN(val) || val > 255) {
+                    span.classList.add('invalid');
+                }
+
+                span.addEventListener('click', function() {
+                    showPositionInfo(index, hexVal, hexValues.length);
+
+                    // Remove previous selection
+                    document.querySelectorAll('.hex-value.selected').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+
+                    // Add selection to clicked element
+                    this.classList.add('selected');
+                });
+
+                previewEl.appendChild(span);
+            });
+        }
+
+        function showPositionInfo(position, hexValue, totalCount) {
+            const infoEl = document.getElementById('positionInfo');
+            const val = parseInt(hexValue, 16);
+
+            let infoHTML = `<div class="position-info-title">Position Information</div>`;
+            infoHTML += `<div class="position-info-detail"><strong>Position:</strong> ${position} (0-indexed) / ${position + 1} (1-indexed)</div>`;
+            infoHTML += `<div class="position-info-detail"><strong>Hex Value:</strong> ${hexValue.toUpperCase()}</div>`;
+
+            if (!isNaN(val) && val <= 255) {
+                infoHTML += `<div class="position-info-detail"><strong>Decimal:</strong> ${val}</div>`;
+                infoHTML += `<div class="position-info-detail"><strong>Binary:</strong> ${val.toString(2).padStart(8, '0')}</div>`;
+                infoHTML += `<div class="position-info-detail"><strong>ASCII:</strong> ${val >= 32 && val <= 126 ? String.fromCharCode(val) + ' (printable)' : val < 32 ? '(control character)' : '(non-printable)'}</div>`;
+            } else {
+                infoHTML += `<div class="position-info-detail" style="color: #dc3545;"><strong>Status:</strong> Invalid hex value</div>`;
+            }
+
+            infoHTML += `<div class="position-info-detail"><strong>Total values:</strong> ${totalCount}</div>`;
+
+            infoEl.innerHTML = infoHTML;
+            infoEl.classList.add('visible');
         }
 
         document.getElementById('hexInput').addEventListener('input', updateStats);
@@ -417,6 +614,9 @@
             outputEl.value = output;
             downloadBtn.disabled = false;
             messageEl.innerHTML = `<div class="success">Successfully converted ${count} hex values to binary</div>`;
+
+            // Make output clickable if in hex dump mode
+            makeOutputClickable();
         }
 
         function clearAll() {
@@ -424,6 +624,7 @@
             document.getElementById('output').value = '';
             document.getElementById('message').innerHTML = '';
             document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('positionInfo').classList.remove('visible');
             binaryData = null;
             updateStats();
         }
