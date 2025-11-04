@@ -50,18 +50,18 @@
   <body>
     <h1>Test Card Generator</h1>
     <p class="note">
-      Enter one BIN (1–15 digits) per line. The generator completes each to a
-      16‑digit number with a valid Luhn check digit.
+      Enter the start of the test card you want to regenerate (1–15 digits), or
+      paste an existing full card number to refresh its Luhn check digit.
     </p>
 
     <textarea
       id="input"
-      placeholder="Example: 4&#10;123456&#10;55000012345"
+      placeholder="Examples:&#10;4&#10;123456&#10;55000012345&#10;4111111111111111"
     ></textarea>
     <button id="generate">Generate</button>
     <textarea
       id="output"
-      placeholder="Generated card numbers will appear here"
+      placeholder="Regenerated card numbers will appear here"
     ></textarea>
 
     <script>
@@ -75,7 +75,6 @@
           .reverse();
         const sum = digits.reduce((acc, digit, idx) => {
           if (idx % 2 === 0) {
-            // even index once reversed => odd position from right
             const doubled = digit * 2;
             return acc + (doubled > 9 ? doubled - 9 : doubled);
           }
@@ -86,11 +85,19 @@
       }
 
       // ---------------------------
-      // Generate card from BIN
+      // Generate or recalc card
       // ---------------------------
       function generateCard(bin) {
         const prefix = bin.trim();
-        if (!/^\d{1,15}$/.test(prefix)) return null;
+        if (!/^\d{1,19}$/.test(prefix)) return null;
+
+        if (prefix.length >= 16) {
+          // Recalculate Luhn on all but last digit
+          const base = prefix.slice(0, -1);
+          const checkDigit = luhnCheckDigit(base);
+          return base + checkDigit;
+        }
+
         const needed = 15 - prefix.length;
         const randomPart = Array.from({ length: needed }, () =>
           Math.floor(Math.random() * 10)
@@ -101,7 +108,7 @@
       }
 
       // ---------------------------
-      // Handle "Generate" click
+      // Handle Generate click
       // ---------------------------
       document.getElementById("generate").addEventListener("click", () => {
         const bins = document
