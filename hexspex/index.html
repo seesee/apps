@@ -301,6 +301,80 @@
             margin-bottom: 5px;
             font-weight: 500;
         }
+
+        .preview-section {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .preview-section.visible {
+            display: block;
+        }
+
+        .toggle-preview {
+            font-size: 0.85em;
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .toggle-preview:hover {
+            color: #764ba2;
+        }
+
+        .range-input-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .range-input-section.visible {
+            display: block;
+        }
+
+        .range-controls {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .range-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .range-input-group label {
+            font-size: 0.85em;
+        }
+
+        .range-input-group input {
+            padding: 6px 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100px;
+        }
+
+        .range-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-small {
+            padding: 6px 16px;
+            font-size: 13px;
+        }
+
+        .highlight-marker {
+            background: #fff3cd;
+            border-bottom: 2px solid #ffc107;
+        }
     </style>
 </head>
 <body>
@@ -344,9 +418,32 @@
                     <span class="stat-value" id="validCount">0</span>
                 </div>
             </div>
-            <div class="preview-label">Clickable Hex Preview (click any value to see position):</div>
-            <div id="hexPreview" class="hex-preview"></div>
             <div id="positionInfo" class="position-info"></div>
+
+            <div class="range-input-section" id="rangeInputSection">
+                <div style="font-weight: 600; margin-bottom: 10px;">Highlight Byte Range</div>
+                <div class="range-controls">
+                    <div class="range-input-group">
+                        <label>Start Byte:</label>
+                        <input type="number" id="rangeStart" min="0" placeholder="0">
+                    </div>
+                    <div class="range-input-group">
+                        <label>End Byte:</label>
+                        <input type="number" id="rangeEnd" min="0" placeholder="0">
+                    </div>
+                    <button class="btn-primary btn-small" onclick="highlightRange()">Highlight Range</button>
+                    <button class="btn-secondary btn-small" onclick="clearHighlight()">Clear</button>
+                </div>
+            </div>
+
+            <a class="toggle-preview" onclick="togglePreview()">
+                <span id="previewToggleText">▶ Show Hex Preview</span>
+            </a>
+
+            <div class="preview-section" id="previewSection">
+                <div class="preview-label">Clickable Hex Preview:</div>
+                <div id="hexPreview" class="hex-preview"></div>
+            </div>
         </div>
 
         <div class="button-group">
@@ -415,22 +512,45 @@
             return {bytes, errors, count: hexValues.length};
         }
 
-        function bytesToHexDump(bytes, bytesPerLine = 16) {
+        function bytesToHexDump(bytes, bytesPerLine = 16, highlightRange = null) {
             let result = '';
             for (let i = 0; i < bytes.length; i += bytesPerLine) {
                 const offset = i.toString(16).padStart(8, '0');
                 const chunk = bytes.slice(i, i + bytesPerLine);
 
                 const hexPart = Array.from(chunk)
-                    .map((b, idx) => `[${i + idx}:${b.toString(16).padStart(2, '0')}]`)
+                    .map((b, idx) => {
+                        const pos = i + idx;
+                        const hexStr = b.toString(16).padStart(2, '0');
+
+                        // Check if this byte is in the highlight range
+                        if (highlightRange && pos >= highlightRange.start && pos <= highlightRange.end) {
+                            return `[${pos}:${hexStr}]*`;
+                        }
+                        return `[${pos}:${hexStr}]`;
+                    })
                     .join(' ');
 
                 const asciiPart = Array.from(chunk)
-                    .map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.')
+                    .map((b, idx) => {
+                        const pos = i + idx;
+                        const char = (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+
+                        // Mark highlighted characters
+                        if (highlightRange && pos >= highlightRange.start && pos <= highlightRange.end) {
+                            return `<${char}>`;
+                        }
+                        return char;
+                    })
                     .join('');
 
-                result += `${offset}  ${hexPart.padEnd(bytesPerLine * 3 - 1, ' ')}  |${asciiPart}|\n`;
+                result += `${offset}  ${hexPart}  |${asciiPart}|\n`;
             }
+
+            if (highlightRange) {
+                result += `\n*** Highlighted bytes ${highlightRange.start} to ${highlightRange.end} (${highlightRange.end - highlightRange.start + 1} bytes) ***\n`;
+            }
+
             return result;
         }
 
@@ -557,7 +677,139 @@
             infoEl.classList.add('visible');
         }
 
+        let currentHighlightRange = null;
+
+        function togglePreview() {
+            const previewSection = document.getElementById('previewSection');
+            const toggleText = document.getElementById('previewToggleText');
+
+            previewSection.classList.toggle('visible');
+
+            if (previewSection.classList.contains('visible')) {
+                toggleText.textContent = '▼ Hide Hex Preview';
+            } else {
+                toggleText.textContent = '▶ Show Hex Preview';
+            }
+        }
+
+        function getBytePositionFromCursor() {
+            const hexInput = document.getElementById('hexInput');
+            const text = hexInput.value;
+            const cursorStart = hexInput.selectionStart;
+            const cursorEnd = hexInput.selectionEnd;
+
+            // Parse the text up to cursor position to count bytes
+            const beforeCursor = text.substring(0, cursorStart);
+            const hexValues = text.trim().split(/\s+/).filter(v => v.length > 0);
+
+            // Count how many complete hex values are before the cursor
+            let currentPos = 0;
+            let byteIndex = 0;
+
+            for (let i = 0; i < hexValues.length; i++) {
+                const hexVal = hexValues[i];
+                const nextPos = text.indexOf(hexVal, currentPos);
+
+                if (nextPos >= cursorStart) {
+                    break;
+                }
+
+                currentPos = nextPos + hexVal.length;
+                if (currentPos <= cursorStart) {
+                    byteIndex = i + 1;
+                }
+            }
+
+            // If there's a selection, calculate the end byte too
+            let endByteIndex = byteIndex;
+            if (cursorEnd > cursorStart) {
+                currentPos = 0;
+                for (let i = 0; i < hexValues.length; i++) {
+                    const hexVal = hexValues[i];
+                    const nextPos = text.indexOf(hexVal, currentPos);
+
+                    if (nextPos >= cursorEnd) {
+                        break;
+                    }
+
+                    currentPos = nextPos + hexVal.length;
+                    if (currentPos <= cursorEnd) {
+                        endByteIndex = i + 1;
+                    }
+                }
+            }
+
+            return {
+                start: byteIndex,
+                end: endByteIndex,
+                isRange: endByteIndex > byteIndex,
+                hexValues: hexValues
+            };
+        }
+
+        function handleTextAreaClick() {
+            const hexInput = document.getElementById('hexInput');
+            const infoEl = document.getElementById('positionInfo');
+            const rangeSection = document.getElementById('rangeInputSection');
+
+            if (!hexInput.value.trim()) {
+                infoEl.classList.remove('visible');
+                rangeSection.classList.remove('visible');
+                return;
+            }
+
+            const position = getBytePositionFromCursor();
+
+            if (position.isRange) {
+                // Show range info
+                let infoHTML = `<div class="position-info-title">Selection Information</div>`;
+                infoHTML += `<div class="position-info-detail"><strong>Byte Range:</strong> ${position.start} to ${position.end} (0-indexed) / ${position.start + 1} to ${position.end + 1} (1-indexed)</div>`;
+                infoHTML += `<div class="position-info-detail"><strong>Bytes Selected:</strong> ${position.end - position.start}</div>`;
+
+                // Show the hex values in this range
+                const selectedHex = position.hexValues.slice(position.start, position.end);
+                if (selectedHex.length > 0) {
+                    infoHTML += `<div class="position-info-detail"><strong>Hex Values:</strong> ${selectedHex.join(' ')}</div>`;
+                }
+
+                infoEl.innerHTML = infoHTML;
+                infoEl.classList.add('visible');
+
+                // Auto-fill the range inputs
+                document.getElementById('rangeStart').value = position.start;
+                document.getElementById('rangeEnd').value = position.end - 1;
+                rangeSection.classList.add('visible');
+            } else {
+                // Show single position info
+                const hexValue = position.hexValues[position.start - 1];
+
+                if (hexValue) {
+                    let infoHTML = `<div class="position-info-title">Cursor Position</div>`;
+                    infoHTML += `<div class="position-info-detail"><strong>Byte Position:</strong> ${position.start - 1} (0-indexed) / ${position.start} (1-indexed)</div>`;
+                    infoHTML += `<div class="position-info-detail"><strong>Hex Value:</strong> ${hexValue.toUpperCase()}</div>`;
+
+                    const val = parseInt(hexValue, 16);
+                    if (!isNaN(val) && val <= 255) {
+                        infoHTML += `<div class="position-info-detail"><strong>Decimal:</strong> ${val}</div>`;
+                        infoHTML += `<div class="position-info-detail"><strong>Binary:</strong> ${val.toString(2).padStart(8, '0')}</div>`;
+                        infoHTML += `<div class="position-info-detail"><strong>ASCII:</strong> ${val >= 32 && val <= 126 ? String.fromCharCode(val) + ' (printable)' : val < 32 ? '(control character)' : '(non-printable)'}</div>`;
+                    }
+
+                    infoHTML += `<div class="position-info-detail"><strong>Total bytes:</strong> ${position.hexValues.length}</div>`;
+
+                    infoEl.innerHTML = infoHTML;
+                    infoEl.classList.add('visible');
+                    rangeSection.classList.add('visible');
+                } else {
+                    infoEl.classList.remove('visible');
+                }
+            }
+        }
+
         document.getElementById('hexInput').addEventListener('input', updateStats);
+        document.getElementById('hexInput').addEventListener('click', handleTextAreaClick);
+        document.getElementById('hexInput').addEventListener('keyup', handleTextAreaClick);
+        document.getElementById('hexInput').addEventListener('select', handleTextAreaClick);
 
         function convertHex() {
             const hexInput = document.getElementById('hexInput').value;
@@ -597,7 +849,7 @@
             let output = '';
 
             if (outputMode === 'hex' || outputMode === 'both') {
-                output += bytesToHexDump(processedBytes);
+                output += bytesToHexDump(processedBytes, 16, currentHighlightRange);
                 if (outputMode === 'both') output += '\n' + '='.repeat(60) + '\n\n';
             }
 
@@ -625,6 +877,10 @@
             document.getElementById('message').innerHTML = '';
             document.getElementById('downloadBtn').disabled = true;
             document.getElementById('positionInfo').classList.remove('visible');
+            document.getElementById('rangeInputSection').classList.remove('visible');
+            currentHighlightRange = null;
+            document.getElementById('rangeStart').value = '';
+            document.getElementById('rangeEnd').value = '';
             binaryData = null;
             updateStats();
         }
@@ -644,6 +900,45 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        function highlightRange() {
+            const startVal = parseInt(document.getElementById('rangeStart').value);
+            const endVal = parseInt(document.getElementById('rangeEnd').value);
+
+            if (isNaN(startVal) || isNaN(endVal)) {
+                alert('Please enter valid start and end byte positions.');
+                return;
+            }
+
+            if (startVal > endVal) {
+                alert('Start byte must be less than or equal to end byte.');
+                return;
+            }
+
+            const hexInput = document.getElementById('hexInput').value;
+            const hexValues = hexInput.trim().split(/\s+/).filter(v => v.length > 0);
+
+            if (endVal >= hexValues.length) {
+                alert(`End byte ${endVal} exceeds total bytes (${hexValues.length - 1} max).`);
+                return;
+            }
+
+            currentHighlightRange = { start: startVal, end: endVal };
+
+            // Re-convert to show the highlight
+            convertHex();
+        }
+
+        function clearHighlight() {
+            currentHighlightRange = null;
+            document.getElementById('rangeStart').value = '';
+            document.getElementById('rangeEnd').value = '';
+
+            // Re-convert to remove the highlight
+            if (binaryData) {
+                convertHex();
+            }
         }
 
         // Initialize stats
