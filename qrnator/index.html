@@ -588,6 +588,74 @@
                 }
             }
 
+            function encodeDataBits(data, version, ecLevel) {
+                // Create bit stream with proper QR code structure
+                const bits = [];
+
+                // Mode indicator: 0100 for byte mode (4 bits)
+                bits.push(0, 1, 0, 0);
+
+                // Character count indicator (8 or 16 bits depending on version)
+                const countBits = version < 10 ? 8 : 16;
+                for (let i = countBits - 1; i >= 0; i--) {
+                    bits.push((data.length >> i) & 1);
+                }
+
+                // Data bytes (8 bits each)
+                for (let i = 0; i < data.length; i++) {
+                    for (let j = 7; j >= 0; j--) {
+                        bits.push((data[i] >> j) & 1);
+                    }
+                }
+
+                // Terminator (up to 4 zero bits)
+                for (let i = 0; i < Math.min(4, bits.length % 8); i++) {
+                    bits.push(0);
+                }
+
+                // Pad to make multiple of 8
+                while (bits.length % 8 !== 0) {
+                    bits.push(0);
+                }
+
+                // Convert bits to bytes
+                const bytes = [];
+                for (let i = 0; i < bits.length; i += 8) {
+                    let byte = 0;
+                    for (let j = 0; j < 8; j++) {
+                        byte = (byte << 1) | bits[i + j];
+                    }
+                    bytes.push(byte);
+                }
+
+                // Get capacity for this version/EC level
+                const capacities = {
+                    1: {L: 19, M: 16, Q: 13, H: 9},
+                    2: {L: 34, M: 28, Q: 22, H: 16},
+                    3: {L: 55, M: 44, Q: 34, H: 26},
+                    4: {L: 80, M: 64, Q: 48, H: 36},
+                    5: {L: 108, M: 86, Q: 62, H: 46},
+                    6: {L: 134, M: 108, Q: 76, H: 60},
+                    7: {L: 154, M: 124, Q: 88, H: 66},
+                    8: {L: 192, M: 154, Q: 110, H: 86},
+                    9: {L: 230, M: 182, Q: 132, H: 100},
+                    10: {L: 271, M: 216, Q: 154, H: 122}
+                };
+
+                const capacity = (capacities[version] || capacities[10])[ecLevel] ||
+                                (capacities[version] || capacities[10]).M;
+
+                // Add padding bytes (alternating 236 and 17) to fill capacity
+                const paddingBytes = [236, 17]; // 11101100, 00010001 in decimal
+                let paddingIndex = 0;
+                while (bytes.length < capacity) {
+                    bytes.push(paddingBytes[paddingIndex % 2]);
+                    paddingIndex++;
+                }
+
+                return bytes;
+            }
+
             function generateQR(text, ecLevel = 'M') {
                 const data = encodeData(text);
                 const version = getVersionForLength(data.length, ecLevel);
@@ -596,11 +664,8 @@
                 addFinderPatterns(matrix, size);
                 addTimingPatterns(matrix, size);
 
-                // Simplified: just add data without full encoding
-                const encoded = new Array(data.length + 10).fill(0);
-                for (let i = 0; i < data.length; i++) {
-                    encoded[i] = data[i];
-                }
+                // Properly encode data with mode, count, data, terminator, and padding
+                const encoded = encodeDataBits(data, version, ecLevel);
 
                 addData(matrix, size, encoded);
                 applyMask(matrix, size, 0);
