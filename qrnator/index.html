@@ -742,18 +742,27 @@
             const chunkSize = parseInt(document.getElementById('chunkSize').value);
             chunks = [];
 
-            // Split base64 into chunks
+            // Calculate total data chunks
+            const totalDataChunks = Math.ceil(base64Data.length / chunkSize);
+
+            // First chunk: Metadata
+            // Format: META:filename:filesize:filetype:totalchunks
+            const metaChecksum = calculateChecksum(fileData.name + fileData.size + fileData.type);
+            const metaPayload = `META:${encodeURIComponent(fileData.name)}:${fileData.size}:${encodeURIComponent(fileData.type || 'application/octet-stream')}:${totalDataChunks}:${metaChecksum}`;
+            chunks.push(metaPayload);
+
+            // Split base64 into data chunks
             for (let i = 0; i < base64Data.length; i += chunkSize) {
                 const chunk = base64Data.substring(i, i + chunkSize);
-                const sequence = chunks.length;
+                const sequence = Math.floor(i / chunkSize);
                 const checksum = calculateChecksum(chunk);
 
-                // Format: SEQ:TOTAL:CHECKSUM:DATA
-                const payload = `${sequence}:${Math.ceil(base64Data.length / chunkSize)}:${checksum}:${chunk}`;
+                // Format: DATA:SEQ:TOTAL:CHECKSUM:PAYLOAD
+                const payload = `DATA:${sequence}:${totalDataChunks}:${checksum}:${chunk}`;
                 chunks.push(payload);
             }
 
-            // Update status
+            // Update status (total chunks includes metadata chunk)
             document.getElementById('totalChunks').textContent = chunks.length;
             document.getElementById('currentChunk').textContent = '0';
             status.classList.remove('hidden');
@@ -778,8 +787,9 @@
             // Create info overlay
             const info = document.createElement('div');
             info.className = 'qr-info';
+            const chunkType = chunk.startsWith('META:') ? 'Metadata' : `Data ${index}`;
             info.innerHTML = `
-                <div class="qr-info-label">Chunk ${index + 1} of ${chunks.length}</div>
+                <div class="qr-info-label">${chunkType} - ${index + 1} of ${chunks.length}</div>
                 <div>${Math.round(((index + 1) / chunks.length) * 100)}% complete</div>
             `;
             qrDisplay.appendChild(info);
