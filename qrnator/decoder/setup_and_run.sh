@@ -69,18 +69,27 @@ echo ""
 echo -e "${BLUE}======================================${NC}"
 echo ""
 
-# Check if video file argument is provided
+# Check if arguments are provided
 if [ $# -eq 0 ]; then
     echo -e "${YELLOW}Usage:${NC}"
-    echo "  $0 <video_file.mp4> [output_directory]"
+    echo "  $0 <video_file> [video_file2 ...] [OPTIONS]"
     echo ""
-    echo -e "${YELLOW}Example:${NC}"
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  -o, --output DIR    Output directory (default: current directory)"
+    echo "  -v, --verbose       Enable verbose logging"
+    echo ""
+    echo -e "${YELLOW}Examples:${NC}"
     echo "  $0 recording.mp4"
-    echo "  $0 recording.mp4 ./output"
+    echo "  $0 video1.mp4 video2.mp4 -o ./output"
+    echo "  $0 recording.mp4 --verbose"
     echo ""
-    echo -e "${YELLOW}Running decoder help:${NC}"
+    echo -e "${YELLOW}The decoder will:${NC}"
+    echo "  • Process one or more video files"
+    echo "  • Extract all QR codes and deduplicate"
+    echo "  • Handle multiple files encoded in the same video"
+    echo "  • Use the original filename from metadata"
+    echo "  • Verify checksums for all chunks"
     echo ""
-    python3 "$PYTHON_SCRIPT"
     exit 0
 fi
 
