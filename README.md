@@ -11,6 +11,11 @@ A single-page web app (aside from an optional service worker and favicon) that a
 
 [Link to Activity Tracker](https://seesee.github.io/apps/activity-tracker/)  
 
+### Jottery
+Another single-page web app. This one is a fast, local, searchable jotter, ideal for keeping scratch notes and useful snippets. Faster than waiting for Notepad++ to spool up a zillion tabs.
+
+[Link to Jottery](https://seesee.github.io/apps/jottery/)  
+
 ### Templatimator
 A quick way to take a text template, substitute placeholders within it (in either JSON or YAML format), and output as text, Markdown, HTML, CSV, etc. This can be quite handy if you're constantly generating a bunch of boilerplate content for whatever reason. It's like a superpowered mail merge for geeks.
 
