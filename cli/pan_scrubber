@@ -176,21 +176,30 @@ sub process_stream {
 
     if (length($buffer) > $OVERLAP) {
       my $proc_len = length($buffer) - $OVERLAP;
-      my $segment  = substr($buffer, 0, $proc_len, '');
-      
-      # Process both regular PANs and embedded PANs
-      $segment =~ s/($PAN_REGEX)/scrub_match($1)/ge;
-      $segment =~ s/($LONG_DIGITS_REGEX)/scrub_long_digits($1)/ge;
-      
-      # Convert back to EBCDIC if needed
-      $segment = ascii_to_ebcdic($segment) if $ebcdic;
-      print $segment;
+
+      # Find a safe boundary - look back to avoid splitting within a digit sequence
+      # We want to cut at a position that's NOT in the middle of [\d \-]
+      while ($proc_len > 0 && substr($buffer, $proc_len - 1, 1) =~ /[\d \-]/) {
+        $proc_len--;
+      }
+
+      # Only process if we found a safe boundary (proc_len > 0)
+      if ($proc_len > 0) {
+        my $segment  = substr($buffer, 0, $proc_len, '');
+
+        # Process all potential PAN sequences (digits with optional separators)
+        # Match sequences that contain at least 13 digits
+        $segment =~ s/([\d \-]{13,})/scrub_sequence($1)/ge;
+
+        # Convert back to EBCDIC if needed
+        $segment = ascii_to_ebcdic($segment) if $ebcdic;
+        print $segment;
+      }
     }
   }
 
   # Flush remaining tail
-  $buffer =~ s/($PAN_REGEX)/scrub_match($1)/ge;
-  $buffer =~ s/($LONG_DIGITS_REGEX)/scrub_long_digits($1)/ge;
+  $buffer =~ s/([\d \-]{13,})/scrub_sequence($1)/ge;
   $buffer = ascii_to_ebcdic($buffer) if $ebcdic;
   print $buffer;
 }
@@ -200,50 +209,145 @@ sub scheme_allowed {
   return !!$ALLOW{$scheme};
 }
 
+sub scrub_sequence {
+  my ($sequence) = @_;
+
+  # Extract digits only to check length
+  my $digit_only = $sequence;
+  $digit_only =~ tr/0-9//cd;
+  my $digit_count = length($digit_only);
+
+  # If less than 13 digits, return unchanged
+  return $sequence if $digit_count < 13;
+
+  # If no separators (pure digits), use long_digits approach
+  if ($sequence !~ /[ \-]/) {
+    return scrub_long_digits($sequence);
+  }
+
+  # Has separators - split on spaces and process each part
+  my @parts = split(/([ ]+)/, $sequence);
+  my @result = ();
+
+  for my $part (@parts) {
+    if ($part =~ /^[ ]+$/) {
+      # It's a space separator, keep it
+      push @result, $part;
+    } elsif ($part =~ /\-/) {
+      # Has hyphens - single PAN with hyphen separators
+      push @result, scrub_match($part);
+    } elsif ($part =~ /^\d+$/) {
+      # Pure digits - could be single or multiple concatenated PANs
+      push @result, scrub_long_digits($part);
+    } else {
+      # Something else, keep it
+      push @result, $part;
+    }
+  }
+
+  return join('', @result);
+}
+
 sub scrub_long_digits {
   my ($digit_string) = @_;
   my $len            = length($digit_string);
-  
-  # Don't process if it's already been handled or too short
+
+  # Don't process if too short
   return $digit_string if $len < 13;
-  
-  my $result   = $digit_string;
-  my $modified = 0;
-  my $pos      = 0;
-  
-  # Scan through the string looking for valid PANs
+
+  # Step 1: Find ALL valid non-overlapping PANs in the string
+  my @found_pans = ();
+  my $pos = 0;
+
   while ($pos <= $len - 13) {
-    my $found_pan = 0;
-    
-    # Try each possible PAN length (longest first for greedy matching)
+    my $found_at_pos = 0;
+
     for my $pan_len (reverse 13 .. 19) {
-      last if $pos + $pan_len > $len;
-      
+      next if $pos + $pan_len > $len;
+
       my $candidate = substr($digit_string, $pos, $pan_len);
       my $scheme    = detect_scheme($candidate);
-      
+
       # Check if this is a valid PAN we should scrub
       next unless scheme_allowed($scheme);
       next if $luhn && !luhn_check($candidate);
-      
-      # Found a valid PAN - mask it
-      my $masked = mask_digits($candidate, $wipe);
-      substr($result, $pos, $pan_len) = $masked;
-      
+
+      # Determine standard length for this scheme
+      my $standard_len = ($scheme eq 'amex') ? 15 : 16;
+
+      # If this match is longer than standard, check if standard length also works
+      # Prefer standard length to avoid false matches from concatenated PANs
+      if ($pan_len > $standard_len && $pos + $standard_len <= $len) {
+        my $std_candidate = substr($digit_string, $pos, $standard_len);
+        my $std_scheme = detect_scheme($std_candidate);
+        if ($std_scheme eq $scheme && (!$luhn || luhn_check($std_candidate))) {
+          # Standard length also valid, prefer it
+          $candidate = $std_candidate;
+          $pan_len = $standard_len;
+        }
+      }
+
+      # Found a valid PAN - record it
+      push @found_pans, {
+        pos    => $pos,
+        len    => $pan_len,
+        scheme => $scheme
+      };
+
       # Update statistics
       $STATS{$scheme}++;
-      
-      # Move past this PAN
-      $pos       += $pan_len;
-      $found_pan = 1;
-      $modified  = 1;
+
+      # Skip past this PAN to avoid overlapping matches
+      $pos += $pan_len;
+      $found_at_pos = 1;
       last;
     }
-    
+
     # If no PAN found at this position, move forward one digit
-    $pos++ unless $found_pan;
+    $pos++ unless $found_at_pos;
   }
-  
+
+  # If no PANs found, return original
+  return $digit_string unless @found_pans;
+
+  # Step 2: Create bitmask - which positions should be preserved vs zeroed
+  # 1 = preserve (BIN or last4 of any PAN), 0 = zero (middle digits)
+  my @preserve = (1) x $len;  # Default: preserve everything
+
+  for my $pan (@found_pans) {
+    my $pos = $pan->{pos};
+    my $len = $pan->{len};
+
+    # For this PAN, mark middle digits as "should zero"
+    # Unless --wipe flag is set, preserve BIN (first 6) and last 4
+    if ($wipe) {
+      # Zero entire PAN
+      for my $i ($pos .. $pos + $len - 1) {
+        $preserve[$i] = 0;
+      }
+    } elsif ($len >= 10) {
+      # Zero middle (preserve first 6 and last 4)
+      for my $i ($pos + 6 .. $pos + $len - 5) {
+        $preserve[$i] = 0;
+      }
+    } else {
+      # PAN too short, zero everything
+      for my $i ($pos .. $pos + $len - 1) {
+        $preserve[$i] = 0;
+      }
+    }
+  }
+
+  # Step 3: Build result using the mask
+  my $result = '';
+  for my $i (0 .. $len - 1) {
+    if ($preserve[$i]) {
+      $result .= substr($digit_string, $i, 1);
+    } else {
+      $result .= '0';
+    }
+  }
+
   return $result;
 }
 
