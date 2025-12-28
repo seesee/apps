@@ -12,7 +12,7 @@ A single-page web app (aside from an optional service worker and favicon) that a
 [Link to Activity Tracker](https://seesee.github.io/apps/activity-tracker/)  
 
 ### Jottery
-Another single-page web app. This one is a fast, local, searchable jotter, ideal for keeping scratch notes and useful snippets. Faster than waiting for Notepad++ to spool up a zillion tabs.
+A single-page web app and terminal client. This one is a fast, local, searchable jotter, ideal for keeping scratch notes and useful snippets. Faster than waiting for Notepad++ to spool up a zillion tabs. Optionally syncs to a server to allow sharing of notes and snippets between web and terminal clients. All notes are encrypted, and the amount of faff involved getting all this to work is Quite A Lot. But it's actually pretty useful, and also works on phones (well, my phone).
 
 [Link to Jottery](https://seesee.github.io/apps/jottery/)  
 
