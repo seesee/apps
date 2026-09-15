@@ -58,7 +58,7 @@ A CLI script to view and manage items in Todoist (requires API key and probably 
 
 ----
 
-&copy; 2024-2025 Chris Carline.  
+&copy; 2007-2026 Chris Carline.  
 All rights reserved.
 
 ----
