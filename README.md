@@ -21,6 +21,11 @@ A quick way to take a text template, substitute placeholders within it (in eithe
 
 [Link to Templatimator](https://seesee.github.io/apps/templatimator/)  
 
+### Hombre
+Hombre is a standalone, super lightweight and customisable home page with custom widget support. It uses local storage to save settings (which can be exported and shared). The idea is that if you have to use an aggressively irritating browser that shows you news you don't want to see whenever you open a new tab, you can use this instead and make it semi-tolerable.
+
+[Link to Hombre](https://seesee.github.io/apps/hombre/)  
+
 ### mdtool
 Various markdown tools, e.g. markdown to html, html to markdown. Can be run completely offline.
 
